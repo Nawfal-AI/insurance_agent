@@ -42,15 +42,16 @@ def get_llm():
         # trial credit that expires) — no credit card required to start.
         # Get a key at https://aistudio.google.com/apikey
         #
-        # IMPORTANT: Google has deprecated multiple Gemini models in 2026
-        # (2.0 Flash and 2.0 Flash-Lite were both shut down). If you get a
-        # RESOURCE_EXHAUSTED / "limit: 0" error, it usually means the model
-        # below has since been deprecated too, not that you're out of quota.
-        # Check the CURRENT free-tier model list before assuming a code bug:
-        # https://ai.google.dev/gemini-api/docs/pricing
-        # Override without touching code: set GEMINI_MODEL in .env
+        # IMPORTANT: pinned version numbers (e.g. "gemini-2.5-flash") keep
+        # getting retired by Google faster than their own published
+        # deprecation dates — this has now broken twice. Using the
+        # "-latest" alias instead: Google officially documents this as
+        # auto-updating to whatever their current Flash model is, so this
+        # shouldn't need to be manually updated again every time they
+        # retire a version. If it ever does break, check the current alias
+        # names at https://ai.google.dev/gemini-api/docs/models
         from langchain_google_genai import ChatGoogleGenerativeAI
-        model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+        model_name = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
         return ChatGoogleGenerativeAI(model=model_name, temperature=0)
     elif provider == "ollama":
         # Fully local, fully free, no API key or internet needed at
@@ -73,6 +74,23 @@ def build_agent():
     return create_react_agent(llm, ALL_TOOLS, prompt=SYSTEM_PROMPT)
 
 
+def _extract_text(content) -> str:
+    """Some models (notably newer Gemini responses) return message content
+    as a list of structured content blocks (with citation/grounding
+    metadata attached) instead of a plain string. Handle both."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block.get("text", ""))
+            elif hasattr(block, "text"):
+                parts.append(block.text)
+        return "".join(parts)
+    return str(content) if content else ""
+
+
 def ask(question: str) -> dict:
     """Run the agent on a question. Returns the final answer plus the
     tool-call trace, so callers (and the /ask endpoint) can show the
@@ -85,7 +103,7 @@ def ask(question: str) -> dict:
     # conversation, keyed by tool_call_id, so we join them back to the
     # AIMessage tool call that requested them.
     tool_outputs = {
-        msg.tool_call_id: msg.content
+        msg.tool_call_id: _extract_text(msg.content)
         for msg in messages
         if msg.__class__.__name__ == "ToolMessage"
     }
@@ -105,6 +123,6 @@ def ask(question: str) -> dict:
                         }
                     )
             elif msg.content:
-                final_answer = msg.content
+                final_answer = _extract_text(msg.content)
 
     return {"answer": final_answer, "tool_calls": trace}

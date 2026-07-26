@@ -1,0 +1,30 @@
+{
+  "timestamp_utc": "2026-07-25",
+  "provider": "google",
+  "model": "gemini-flash-latest",
+  "question": "If my deductible is 500 and my claim is 1200, how much will I be reimbursed, and does my policy cover late-filed claims?",
+  "answer": "Based on your policy provisions and calculation details, here is the breakdown:\n\n### 1. Reimbursement Amount\n* Claim Amount: $1,200\n* Deductible: $500 (the out-of-pocket amount you must pay before insurance coverage applies)\n* Reimbursement: $700 ($1,200 minus $500)\n\n### 2. Late-Filed Claims Policy\nAccording to Claims Process — Section 1: Filing Requirements:\n* Claims must be filed within 30 days of the triggering incident.\n* If a claim is missing required documentation, it will be returned with a 14-day window to resubmit.\n* Claims submitted past the 30-day deadline do not satisfy the required filing conditions and are not covered.",
+  "tool_calls": [
+    {
+      "tool": "calculate",
+      "tool_input": { "expression": "1200 - 500" },
+      "observation": "700"
+    },
+    {
+      "tool": "search_policy_documents",
+      "tool_input": { "query": "late filed claims deadline filing limit" },
+      "observation": "[Claims Process — Section 1: Filing Requirements (policy_003_claim_process)] Claims must be filed within 30 days of the triggering incident..."
+    },
+    {
+      "tool": "search_policy_documents",
+      "tool_input": { "query": "late claims submission after 30 days exclusion" },
+      "observation": "[Claims Process — Section 1: Filing Requirements (policy_003_claim_process)] Claims must be filed within 30 days of the triggering incident..."
+    },
+    {
+      "tool": "lookup_term",
+      "tool_input": { "term": "deductible" },
+      "observation": "The amount the policyholder pays out of pocket before the insurer covers the remaining cost of a claim."
+    }
+  ],
+  "note": "Real output from an actual run against the Gemini API (free tier), not fabricated. The agent independently chose to call calculate once, search_policy_documents twice (rewording the query on the second attempt rather than accepting the first result), and lookup_term once — this sequence was not hardcoded. The two near-duplicate search_policy_documents calls are a minor retrieval-efficiency inefficiency worth noting rather than hiding: see NOTES.md."
+}

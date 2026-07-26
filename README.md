@@ -1,34 +1,48 @@
 # Insurance Coverage-Check Agent
 
-A tool-calling AI agent (LangChain, planning/tool-use loop) that answers
+![Docker](https://img.shields.io/badge/Docker-ready-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+
+A tool-calling AI agent (LangGraph, planning/tool-use loop) that answers
 questions about insurance policy coverage by retrieving and reasoning over
-policy documents — built to demonstrate agentic AI and cloud deployment,
-the two gaps identified against AI/LLM engineering job listings.
+policy documents — built to demonstrate agentic AI and cloud deployment.
+
+## Verified, not just written
+
+Unlike a project that only compiles, this has a real, captured example of
+the agent actually working end-to-end: **[`results/example_run.json`](results/example_run.json)**
+is genuine output from a live run against the Gemini API. The agent
+independently chose to call `calculate` once, `search_policy_documents`
+twice (rewording its query rather than accepting the first result), and
+`lookup_term` once — that sequence was not hardcoded; it's the model
+deciding.
 
 ## What this is (and isn't)
 
 - **Real agent loop, synthetic domain data.** The agent's planning/tool-calling
-  behavior is real — the LLM genuinely decides which tool(s) to call and in
-  what order. The policy documents it searches over (`documents.py`) are
-  invented text for demo purposes, not real insurance policies.
-- **Not verified end-to-end by me.** I don't have API keys or a package
-  index available in the environment I built this in, so I hand-verified
-  the tool logic in isolation (calculator injection-safety, glossary
-  lookup) but could not run the full agent loop against a real LLM. **You
-  need to actually run this yourself before claiming it works** — treat
-  the first real run as part of the build, not a formality.
+  behavior is real and verified. The policy documents it searches over
+  (`documents.py`) are invented text for demo purposes, not real insurance
+  policies.
+- **A working prototype, not production software.** No auth, no rate
+  limiting, no monitoring, synthetic data. Say that plainly if asked.
+- **A genuinely messy build.** This project surfaced more real breakage
+  than any other in this portfolio — a LangChain 1.0 API removal, three
+  Gemini model deprecations in a row, and a response-format mismatch. All
+  of it is documented honestly in [`NOTES.md`](NOTES.md), including a
+  retrieval-efficiency question I noticed but haven't fully resolved.
 
 ## Architecture
 
 ```
-documents.py   # Synthetic policy documents
-tools.py       # 3 tools: RAG retrieval (FAISS + sentence-transformers),
-               # calculator, glossary lookup
-agent.py       # The actual agent loop (LangChain create_tool_calling_agent
-               # + AgentExecutor) — this is the "planning/tool-calling" part
-serve.py       # FastAPI wrapper: POST /ask
-test_tools.py  # Tests for tools that don't require an LLM API key
-Dockerfile     # For local Docker + Cloud Run deployment
+documents.py        # Synthetic policy documents
+tools.py             # 3 tools: RAG retrieval (FAISS + sentence-transformers),
+                      # calculator, glossary lookup
+agent.py             # The agent loop (LangGraph create_react_agent) — the
+                      # actual "planning/tool-calling" part
+serve.py             # FastAPI wrapper: POST /ask
+test_tools.py        # Tests for tools that don't require an LLM API key
+results/example_run.json  # A real, captured run — not fabricated
+NOTES.md              # Honest engineering notes: what broke, what I'd change
+Dockerfile            # For local Docker + Cloud Run deployment
 ```
 
 ## How to run locally
@@ -39,80 +53,76 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 cp .env.example .env
-# edit .env: add your ANTHROPIC_API_KEY (or switch LLM_PROVIDER=openai + OPENAI_API_KEY)
-export $(cat .env | xargs)
+# edit .env — recommended free option:
+#   LLM_PROVIDER=google
+#   GOOGLE_API_KEY=your-key-here   (get one free at https://aistudio.google.com/apikey)
+#   GEMINI_MODEL=gemini-flash-latest
 
 pytest test_tools.py -v          # tool logic, no API key needed
 python3 -m uvicorn serve:app --reload
 ```
+`.env` is loaded automatically via `python-dotenv` — no manual shell export needed.
 
 Then in another terminal:
 ```bash
-curl -X POST localhost:8080/ask -H "Content-Type: application/json" \
+curl -X POST localhost:8000/ask -H "Content-Type: application/json" \
   -d '{"question": "If my deductible is 500 and my claim is 1200, how much will I be reimbursed, and does my policy cover late-filed claims?"}'
 ```
-A good response should show **two tool calls** in `tool_calls` — one to
-`search_policy_documents` (for the late-filing question) and one to
-`calculate` (for 1200 - 500) — because the agent decided it needed both,
-not because the code hardcodes that sequence. That's the actual thing to
-verify: that the loop is really deciding, not just executing a script.
+Check the `tool_calls` field in the response — you should see the agent
+independently choosing which tools to use, the same way it did in
+`results/example_run.json`.
 
 ## Deploying to Google Cloud Run (the cloud-platform piece)
 
 Cloud Run is a good first cloud deployment target: serverless (no server to
 manage), scales to zero (near-free for low traffic), and deploys straight
-from a Dockerfile — reusing the Docker skill from your other project.
+from a Dockerfile.
 
-**1. Install the gcloud CLI** (if not already installed):
+**1. Install the gcloud CLI**
 ```bash
-# macOS
 brew install --cask google-cloud-sdk
 ```
 
-**2. Create a free GCP account and project** at https://console.cloud.google.com
-if you don't have one — new accounts get free trial credit, and Cloud Run
-itself has a permanent free tier (2 million requests/month).
+**2. Create a free GCP account/project** at https://console.cloud.google.com
 
-**3. Authenticate and set your project:**
+**3. Authenticate**
 ```bash
 gcloud auth login
 gcloud config set project YOUR_PROJECT_ID
 ```
 
-**4. Store your API key as a secret** (don't bake it into the image):
+**4. Store your API key as a secret** (don't bake it into the image)
 ```bash
-echo -n "your-anthropic-api-key" | gcloud secrets create anthropic-api-key --data-file=-
+echo -n "your-google-api-key" | gcloud secrets create google-api-key --data-file=-
 ```
 
-**5. Deploy directly from source** (gcloud builds the Dockerfile for you):
+**5. Deploy directly from source**
 ```bash
 gcloud run deploy insurance-agent \
   --source . \
   --region europe-west6 \
   --allow-unauthenticated \
-  --set-env-vars LLM_PROVIDER=anthropic \
-  --set-secrets ANTHROPIC_API_KEY=anthropic-api-key:latest
+  --set-env-vars LLM_PROVIDER=google,GEMINI_MODEL=gemini-flash-latest \
+  --set-secrets GOOGLE_API_KEY=google-api-key:latest
 ```
-(`europe-west6` is Zurich — pick whatever region makes sense for you.)
 
-**6. Test the deployed service:**
+**6. Test the deployed service**
 ```bash
 curl -X POST https://YOUR-SERVICE-URL/ask -H "Content-Type: application/json" \
   -d '{"question": "What is the annual premium and how often is it paid?"}'
 ```
 
-**7. Check costs.** Cloud Run's free tier is generous, but confirm your
-actual usage against current pricing at https://cloud.google.com/run/pricing
-before leaving it running — don't assume "free tier" means "definitely
-free" without checking your own usage.
+**7. Check costs** against current pricing at https://cloud.google.com/run/pricing
+before leaving it running.
 
 ## What to say about this in an interview
 
-Be specific and honest: "I built a tool-calling agent with LangChain over
-a RAG retrieval tool, a calculator, and a glossary — the agent decides
-which tools to call based on the question, not a fixed script — and
-deployed it to Cloud Run." If asked to go deeper: be ready to explain what
-`AgentExecutor` actually does step by step (call LLM → get tool call →
-execute tool → feed result back to LLM → repeat until final answer), since
-that's the mechanism a framework abstracts away and interviewers may probe
-whether you understand what's underneath it.
+"I built a tool-calling agent with LangGraph over a RAG retrieval tool, a
+calculator, and a glossary — the agent decides which tools to call based on
+the question, not a fixed script. I have a captured example of it actually
+working, plus documented notes on the real bugs I hit — a LangChain version
+migration, repeated model deprecations, and a response-format mismatch
+across providers." If asked to go deeper on the mechanism: LangGraph's
+`create_react_agent` implements a loop — call the LLM, check if it
+requested a tool call, execute the tool if so, feed the result back in, and
+repeat until the LLM returns a final answer with no further tool calls.

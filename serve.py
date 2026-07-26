@@ -1,12 +1,17 @@
 """FastAPI service exposing the agent. Same serving pattern as your
 manipulation-policy-pipeline project: health check, structured request/
 response models, errors returned as proper HTTP status codes."""
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from agent import ask
 
 app = FastAPI(title="Insurance Coverage-Check Agent")
+
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 class AskRequest(BaseModel):
@@ -22,6 +27,13 @@ class ToolCall(BaseModel):
 class AskResponse(BaseModel):
     answer: str
     tool_calls: list[ToolCall]
+
+
+@app.get("/")
+def ui():
+    """Serves the web UI. If you're looking at this in a browser, this is
+    the whole point of the file — a human-usable front end over /ask."""
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 @app.get("/health")
