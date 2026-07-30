@@ -128,7 +128,6 @@ leaving a deployment running.
 
 ## Scope and limitations
 
-<<<<<<< HEAD
 This is a working prototype demonstrating an agentic AI system and its
 deployment path, not a production insurance tool:
 
@@ -145,5 +144,3 @@ issues encountered during development and how they were resolved.
 ## License
 
 MIT — see [`LICENSE`](LICENSE).
-=======
->>>>>>> c162d8043e2fa5006a8100f8d3586a690ed07af0
