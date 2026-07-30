@@ -124,14 +124,3 @@ curl -X POST https://YOUR-SERVICE-URL/ask -H "Content-Type: application/json" \
 **7. Check costs** against current pricing at https://cloud.google.com/run/pricing
 before leaving it running.
 
-## What to say about this in an interview
-
-"I built a tool-calling agent with LangGraph over a RAG retrieval tool, a
-calculator, and a glossary — the agent decides which tools to call based on
-the question, not a fixed script. I have a captured example of it actually
-working, plus documented notes on the real bugs I hit — a LangChain version
-migration, repeated model deprecations, and a response-format mismatch
-across providers." If asked to go deeper on the mechanism: LangGraph's
-`create_react_agent` implements a loop — call the LLM, check if it
-requested a tool call, execute the tool if so, feed the result back in, and
-repeat until the LLM returns a final answer with no further tool calls.
