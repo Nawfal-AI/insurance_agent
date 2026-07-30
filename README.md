@@ -14,7 +14,10 @@ is genuine output from a live run against the Gemini API. The agent
 independently chose to call `calculate` once, `search_policy_documents`
 twice (rewording its query rather than accepting the first result), and
 `lookup_term` once — that sequence was not hardcoded; it's the model
-deciding.
+deciding. (This transcript was captured while Gemini was the active
+provider; the project has since moved to Groq as the default — see
+`LLM_PROVIDER` below — but the agent loop and tool-calling logic it
+demonstrates are unchanged.)
 
 ## What this is (and isn't)
 
@@ -33,16 +36,19 @@ deciding.
 ## Architecture
 
 ```
-documents.py        # Synthetic policy documents
-tools.py             # 3 tools: RAG retrieval (FAISS + sentence-transformers),
-                      # calculator, glossary lookup
-agent.py             # The agent loop (LangGraph create_react_agent) — the
-                      # actual "planning/tool-calling" part
-serve.py             # FastAPI wrapper: POST /ask
-test_tools.py        # Tests for tools that don't require an LLM API key
+documents.py         # Synthetic policy documents
+tools.py              # 3 tools: RAG retrieval (FAISS + sentence-transformers),
+                       # calculator, glossary lookup
+agent.py              # The agent loop (LangGraph create_react_agent) — the
+                       # actual "planning/tool-calling" part; also handles
+                       # multi-turn conversation history
+serve.py               # FastAPI wrapper: POST /ask (accepts a `history` field
+                        # for multi-turn conversations)
+static/index.html      # Web UI — chat thread + live "Grounding Ledger"
+test_tools.py           # Tests for tools that don't require an LLM API key
 results/example_run.json  # A real, captured run — not fabricated
-NOTES.md              # Honest engineering notes: what broke, what I'd change
-Dockerfile            # For local Docker + Cloud Run deployment
+NOTES.md               # Honest engineering notes: what broke, what I'd change
+Dockerfile              # For local Docker + Cloud Run deployment
 ```
 
 ## How to run locally
@@ -54,9 +60,12 @@ pip install -r requirements.txt
 
 cp .env.example .env
 # edit .env — recommended free option:
-#   LLM_PROVIDER=google
-#   GOOGLE_API_KEY=your-key-here   (get one free at https://aistudio.google.com/apikey)
-#   GEMINI_MODEL=gemini-flash-latest
+#   LLM_PROVIDER=groq
+#   GROQ_API_KEY=your-key-here   (get one free at https://console.groq.com,
+#                                  no credit card required — 14,400 req/day)
+#   GROQ_MODEL=llama-3.1-8b-instant
+# (.env.example also documents Gemini, Ollama, Anthropic, and OpenAI as
+# alternative providers, each with its own trade-offs noted inline.)
 
 pytest test_tools.py -v          # tool logic, no API key needed
 python3 -m uvicorn serve:app --reload
@@ -93,7 +102,7 @@ gcloud config set project YOUR_PROJECT_ID
 
 **4. Store your API key as a secret** (don't bake it into the image)
 ```bash
-echo -n "your-google-api-key" | gcloud secrets create google-api-key --data-file=-
+echo -n "your-groq-api-key" | gcloud secrets create groq-api-key --data-file=-
 ```
 
 **5. Deploy directly from source**
@@ -102,8 +111,8 @@ gcloud run deploy insurance-agent \
   --source . \
   --region europe-west6 \
   --allow-unauthenticated \
-  --set-env-vars LLM_PROVIDER=google,GEMINI_MODEL=gemini-flash-latest \
-  --set-secrets GOOGLE_API_KEY=google-api-key:latest
+  --set-env-vars LLM_PROVIDER=groq,GROQ_MODEL=llama-3.1-8b-instant \
+  --set-secrets GROQ_API_KEY=groq-api-key:latest
 ```
 
 **6. Test the deployed service**

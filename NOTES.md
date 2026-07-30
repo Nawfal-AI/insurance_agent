@@ -60,6 +60,53 @@ is this the agent correctly being thorough, or the retrieval tool's
 similarity search under-serving the first query? I haven't dug into this
 further; it's flagged here rather than glossed over.
 
+## Second debugging pass (post-deployment-prep)
+
+A few days after the notes above, I did a focused pass on correctness —
+running real conversations through the UI and checking every claim in the
+agent's answers against the actual retrieved tool output, not just whether
+it responded without crashing. This surfaced three more real, specific
+bugs, plus one instructive round-trip on prompt engineering.
+
+1. **Missing Groq provider branch.** `.env` and `requirements.txt` were
+   already set up for Groq (added for its much higher free-tier limit —
+   14,400 req/day vs. Gemini's 20), but `get_llm()` in `agent.py` still
+   only handled `anthropic` / `openai` / `google` / `ollama`. Every request
+   failed immediately with `Unknown LLM_PROVIDER: groq`. Not a config
+   problem — the dispatch function was just never updated when the
+   provider was added elsewhere. Fixed by adding the missing branch.
+
+2. **Retrieval returning the wrong clause, traced to what gets embedded.**
+   Testing "what is Standard Liability Coverage" kept retrieving the Legal
+   Defense clause instead. Root cause: `tools.py` only embedded each
+   clause's body text, never its title. The Standard Liability clause's
+   body is entirely about exclusions and never contains the words
+   "liability" or "standard" — while the Legal Defense clause's body
+   literally opens with "Legal defense coverage applies to..." So a query
+   naming the coverage by name matched the *other* document's body purely
+   on word overlap. Fixed by embedding `"{title}: {body}"` instead of body
+   alone, and widened retrieval from k=2 to k=3.
+
+3. **Grounding failures took three iterations to actually close, not one.**
+   After fixing retrieval, I found the agent still fabricating in three
+   distinct ways: (a) inventing numbers for the `calculate` tool that
+   weren't in any retrieved clause, (b) attributing one coverage's
+   retrieved content to a *different* coverage when both had come up in
+   the same conversation, and (c) following a correct "not stated in the
+   documents" disclaimer with a guessed answer anyway. Each prompt fix for
+   one of these had a side effect on another: tightening "don't answer
+   without evidence" first made the agent refuse to answer even when it
+   *had* retrieved a relevant clause, because one grounding rule ("keep
+   searching if incomplete") and another ("don't repeat non-answers")
+   pulled against each other. It took three rounds of testing real
+   conversations, not just checking that the code ran, to land on rules
+   that didn't trade one failure mode for another. Worth being honest
+   about in an interview: prompt-only constraints have a real ceiling here
+   — a production version of this would benefit from a verification pass
+   that checks each sentence of a draft answer against the actual
+   retrieved text before returning it, rather than relying on the system
+   prompt to self-police every edge case.
+
 ## What I'd do with more time
 
 - Add proper agent-level integration tests (mocking the LLM call) rather
