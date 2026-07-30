@@ -2,111 +2,119 @@
 
 ![Docker](https://img.shields.io/badge/Docker-ready-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
-A tool-calling AI agent (LangGraph, planning/tool-use loop) that answers
-questions about insurance policy coverage by retrieving and reasoning over
-policy documents — built to demonstrate agentic AI and cloud deployment.
+A tool-calling AI agent, built with LangGraph, that answers questions about
+insurance policy coverage by retrieving and reasoning over policy
+documents. Given a question, the agent decides for itself which tools to
+call — document search, a calculator, or a glossary lookup — potentially
+several times, before producing a grounded answer with citations back to
+the specific policy section it used.
 
-## Verified, not just written
+## Features
 
-Unlike a project that only compiles, this has a real, captured example of
-the agent actually working end-to-end: **[`results/example_run.json`](results/example_run.json)**
-is genuine output from a live run against the Gemini API. The agent
-independently chose to call `calculate` once, `search_policy_documents`
-twice (rewording its query rather than accepting the first result), and
-`lookup_term` once — that sequence was not hardcoded; it's the model
-deciding. (This transcript was captured while Gemini was the active
-provider; the project has since moved to Groq as the default — see
-`LLM_PROVIDER` below — but the agent loop and tool-calling logic it
-demonstrates are unchanged.)
-
-## What this is (and isn't)
-
-- **Real agent loop, synthetic domain data.** The agent's planning/tool-calling
-  behavior is real and verified. The policy documents it searches over
-  (`documents.py`) are invented text for demo purposes, not real insurance
-  policies.
-- **A working prototype, not production software.** No auth, no rate
-  limiting, no monitoring, synthetic data. Say that plainly if asked.
-- **A genuinely messy build.** This project surfaced more real breakage
-  than any other in this portfolio — a LangChain 1.0 API removal, three
-  Gemini model deprecations in a row, and a response-format mismatch. All
-  of it is documented honestly in [`NOTES.md`](NOTES.md), including a
-  retrieval-efficiency question I noticed but haven't fully resolved.
+- **Real planning loop, not a scripted chatbot.** The agent decides which
+  tools to call and in what order based on the question, using LangGraph's
+  `create_react_agent`.
+- **Grounded, cited answers.** Answers are backed by retrieved policy
+  clauses rather than the model's general knowledge, and cite the specific
+  section they come from.
+- **Three tools:** RAG document search (FAISS + sentence-transformers),
+  a constrained calculator, and a glossary lookup for insurance jargon.
+- **Multi-provider LLM support:** Groq, Google Gemini, Ollama, Anthropic,
+  or OpenAI — configurable via a single environment variable.
+- **Web UI** with a live chat thread and a "Grounding Ledger" panel that
+  shows each tool call and its result as the agent works.
+- **A captured, real example run** ([`results/example_run.json`](results/example_run.json))
+  showing the agent independently choosing to call `calculate` once,
+  `search_policy_documents` twice, and `lookup_term` once for a single
+  question — genuine model output, not a fabricated transcript.
 
 ## Architecture
 
 ```
-documents.py         # Synthetic policy documents
-tools.py              # 3 tools: RAG retrieval (FAISS + sentence-transformers),
-                       # calculator, glossary lookup
-agent.py              # The agent loop (LangGraph create_react_agent) — the
-                       # actual "planning/tool-calling" part; also handles
-                       # multi-turn conversation history
-serve.py               # FastAPI wrapper: POST /ask (accepts a `history` field
-                        # for multi-turn conversations)
-static/index.html      # Web UI — chat thread + live "Grounding Ledger"
-test_tools.py           # Tests for tools that don't require an LLM API key
-results/example_run.json  # A real, captured run — not fabricated
-NOTES.md               # Honest engineering notes: what broke, what I'd change
-Dockerfile              # For local Docker + Cloud Run deployment
+documents.py               # Synthetic policy documents
+tools.py                    # search_policy_documents (RAG), calculate, lookup_term
+agent.py                    # Agent loop (LangGraph create_react_agent) and
+                             # multi-turn conversation handling
+serve.py                     # FastAPI app: POST /ask, serves the web UI
+static/index.html            # Chat UI with the live Grounding Ledger
+test_tools.py                 # Tool tests that don't require an LLM API key
+results/example_run.json      # A real, captured agent run
+NOTES.md                      # Engineering notes and debugging history
+Dockerfile                    # For local Docker and Cloud Run deployment
 ```
 
-## How to run locally
+## Getting started
+
+### Prerequisites
+
+- Python 3.12+
+- An API key for at least one supported LLM provider (Groq's free tier is
+  recommended — see below)
+
+### Installation
 
 ```bash
+git clone https://github.com/Nawfal-AI/insurance_agent.git
+cd insurance_agent
+
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
 cp .env.example .env
-# edit .env — recommended free option:
-#   LLM_PROVIDER=groq
-#   GROQ_API_KEY=your-key-here   (get one free at https://console.groq.com,
-#                                  no credit card required — 14,400 req/day)
-#   GROQ_MODEL=llama-3.1-8b-instant
-# (.env.example also documents Gemini, Ollama, Anthropic, and OpenAI as
-# alternative providers, each with its own trade-offs noted inline.)
+```
 
+Edit `.env` with your provider of choice. Groq is the default and
+recommended option — no credit card required, 14,400 requests/day free tier:
+
+```bash
+LLM_PROVIDER=groq
+GROQ_API_KEY=your-key-here    # https://console.groq.com → API Keys
+GROQ_MODEL=llama-3.1-8b-instant
+```
+
+`.env.example` documents Gemini, Ollama, Anthropic, and OpenAI as
+alternative providers, each with setup notes.
+
+### Running
+
+```bash
 pytest test_tools.py -v          # tool logic, no API key needed
 python3 -m uvicorn serve:app --reload
 ```
-`.env` is loaded automatically via `python-dotenv` — no manual shell export needed.
 
-Then in another terminal:
+Then open **http://localhost:8000** for the web UI, or call the API directly:
+
 ```bash
 curl -X POST localhost:8000/ask -H "Content-Type: application/json" \
   -d '{"question": "If my deductible is 500 and my claim is 1200, how much will I be reimbursed, and does my policy cover late-filed claims?"}'
 ```
-Check the `tool_calls` field in the response — you should see the agent
-independently choosing which tools to use, the same way it did in
-`results/example_run.json`.
 
-## Deploying to Google Cloud Run (the cloud-platform piece)
+The response includes a `tool_calls` field showing exactly which tools the
+agent used and what each one returned.
 
-Cloud Run is a good first cloud deployment target: serverless (no server to
-manage), scales to zero (near-free for low traffic), and deploys straight
-from a Dockerfile.
+## Deployment
 
-**1. Install the gcloud CLI**
+The included `Dockerfile` is ready for containerized deployment on any
+platform that runs a Docker image (Cloud Run, ECS, Fly.io, etc.). Local
+verification:
+
 ```bash
-brew install --cask google-cloud-sdk
+docker build -t insurance-agent .
+docker run -p 8000:8000 --env-file .env insurance-agent
 ```
 
-**2. Create a free GCP account/project** at https://console.cloud.google.com
+### Deploying to Google Cloud Run
 
-**3. Authenticate**
 ```bash
+# Authenticate
 gcloud auth login
 gcloud config set project YOUR_PROJECT_ID
-```
 
-**4. Store your API key as a secret** (don't bake it into the image)
-```bash
+# Store the API key as a secret rather than baking it into the image
 echo -n "your-groq-api-key" | gcloud secrets create groq-api-key --data-file=-
-```
 
-**5. Deploy directly from source**
-```bash
+# Deploy directly from source
 gcloud run deploy insurance-agent \
   --source . \
   --region europe-west6 \
@@ -115,23 +123,24 @@ gcloud run deploy insurance-agent \
   --set-secrets GROQ_API_KEY=groq-api-key:latest
 ```
 
-**6. Test the deployed service**
-```bash
-curl -X POST https://YOUR-SERVICE-URL/ask -H "Content-Type: application/json" \
-  -d '{"question": "What is the annual premium and how often is it paid?"}'
-```
+Check current pricing at https://cloud.google.com/run/pricing before
+leaving a deployment running.
 
-**7. Check costs** against current pricing at https://cloud.google.com/run/pricing
-before leaving it running.
+## Scope and limitations
 
-## What to say about this in an interview
+This is a working prototype demonstrating an agentic AI system and its
+deployment path, not a production insurance tool:
 
-"I built a tool-calling agent with LangGraph over a RAG retrieval tool, a
-calculator, and a glossary — the agent decides which tools to call based on
-the question, not a fixed script. I have a captured example of it actually
-working, plus documented notes on the real bugs I hit — a LangChain version
-migration, repeated model deprecations, and a response-format mismatch
-across providers." If asked to go deeper on the mechanism: LangGraph's
-`create_react_agent` implements a loop — call the LLM, check if it
-requested a tool call, execute the tool if so, feed the result back in, and
-repeat until the LLM returns a final answer with no further tool calls.
+- **Synthetic data.** The policy documents in `documents.py` are invented
+  for this demo — not real insurance policy language.
+- **No authentication, rate limiting, or monitoring.** Suitable for local
+  use or a demo deployment, not for handling real user traffic or data.
+- **No persistent storage.** Conversation history is kept client-side for
+  the duration of a browser session only.
+
+See [`NOTES.md`](NOTES.md) for detailed engineering notes, including real
+issues encountered during development and how they were resolved.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
