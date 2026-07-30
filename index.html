@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Coverage Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,500&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #F4F6F5;
+    --panel: #FFFFFF;
+    --ink: #1C2B3A;
+    --ink-soft: #566473;
+    --line: #DCE3E4;
+    --gold: #A9812F;
+    --gold-soft: #F1E9D8;
+    --ledger-green: #3F6B54;
+    --ledger-green-soft: #E8F0EA;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  .app {
+    display: grid;
+    grid-template-columns: 1.6fr 1fr;
+    height: 100vh;
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+  @media (max-width: 860px) {
+    .app { grid-template-columns: 1fr; height: auto; min-height: 100vh; }
+    .ledger { border-left: none; border-top: 1px solid var(--line); }
+  }
+
+  .brand {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 22px 28px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand h1 {
+    font-family: 'Source Serif 4', serif;
+    font-weight: 600;
+    font-size: 22px;
+    margin: 0;
+    letter-spacing: 0.2px;
+  }
+  .brand .tag {
+    font-size: 12px;
+    color: var(--ink-soft);
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+  }
+
+  .chat-col {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 20px 28px 24px;
+  }
+  .thread {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .msg { max-width: 92%; }
+  .msg.user { align-self: flex-end; text-align: right; }
+  .msg.assistant { align-self: flex-start; }
+
+  .bubble {
+    display: inline-block;
+    text-align: left;
+    padding: 14px 16px;
+    border-radius: var(--radius);
+    line-height: 1.55;
+    font-size: 15px;
+  }
+  .msg.user .bubble {
+    background: var(--ink);
+    color: #F4F6F5;
+    border-bottom-right-radius: 3px;
+  }
+  .msg.assistant .bubble {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-bottom-left-radius: 3px;
+  }
+  .msg.assistant .bubble h3,
+  .msg.assistant .bubble strong { font-family: 'Source Serif 4', serif; }
+  .msg.assistant .bubble p:first-child { margin-top: 0; }
+  .msg.assistant .bubble p:last-child { margin-bottom: 0; }
+
+  .empty-state {
+    margin: auto;
+    text-align: center;
+    color: var(--ink-soft);
+    max-width: 380px;
+  }
+  .empty-state .mark {
+    font-family: 'Source Serif 4', serif;
+    font-size: 40px;
+    color: var(--gold);
+    margin-bottom: 4px;
+  }
+  .empty-state p { font-size: 14px; line-height: 1.6; }
+
+  .composer {
+    margin-top: 16px;
+    display: flex;
+    gap: 10px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    border-radius: var(--radius);
+    padding: 8px 8px 8px 16px;
+  }
+  .composer input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-family: 'Inter', sans-serif;
+    font-size: 14.5px;
+    background: transparent;
+    color: var(--ink);
+  }
+  .composer input::placeholder { color: #98A5B0; }
+  .composer button {
+    border: none;
+    background: var(--ink);
+    color: var(--paper);
+    font-family: 'Inter', sans-serif;
+    font-weight: 500;
+    font-size: 13.5px;
+    padding: 10px 18px;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  .composer button:hover { background: #33455A; }
+  .composer button:disabled { background: #B7C0C8; cursor: default; }
+
+  .ledger {
+    border-left: 1px solid var(--line);
+    background: #FBFCFB;
+    padding: 20px 22px 24px;
+    overflow-y: auto;
+  }
+  .ledger-title {
+    font-family: 'Source Serif 4', serif;
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0 0 3px;
+  }
+  .ledger-sub {
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    margin: 0 0 18px;
+    line-height: 1.5;
+  }
+  .ledger-empty {
+    font-size: 13px;
+    color: var(--ink-soft);
+    font-style: italic;
+    padding-top: 8px;
+  }
+  .receipt {
+    background: var(--panel);
+    border: 1px dashed #C7CFD2;
+    border-radius: 8px;
+    padding: 12px 14px 14px;
+    margin-bottom: 12px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .receipt .tool-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    font-weight: 500;
+    background: var(--gold-soft);
+    color: var(--gold);
+    padding: 2px 8px;
+    border-radius: 20px;
+    margin-bottom: 8px;
+  }
+  .receipt .tool-name.grounded {
+    background: var(--ledger-green-soft);
+    color: var(--ledger-green);
+  }
+  .receipt .row { font-size: 11.5px; margin: 4px 0; color: var(--ink-soft); }
+  .receipt .row b { color: var(--ink); font-weight: 500; }
+  .receipt .observation {
+    margin-top: 6px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--ink-soft);
+    background: var(--paper);
+    border-radius: 6px;
+    padding: 8px;
+    max-height: 90px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+  }
+  .loading-dot {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--gold); margin-right: 6px;
+    animation: pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 0.25; } 50% { opacity: 1; } }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="brand">
+    <h1>Coverage Assistant</h1>
+    <span class="tag">Grounded in policy text — every answer, traceable</span>
+  </div>
+
+  <div class="chat-col">
+    <div class="thread" id="thread">
+      <div class="empty-state" id="emptyState">
+        <div class="mark">§</div>
+        <p>Ask about deductibles, exclusions, claims process, or run a reimbursement calculation. Every answer is grounded in retrieved policy text or a real calculation — watch the ledger on the right as it works.</p>
+      </div>
+    </div>
+
+    <form class="composer" id="composer">
+      <input type="text" id="question" placeholder="e.g. My deductible is 500 and my claim is 1200 — what am I reimbursed?" autocomplete="off" />
+      <button type="submit" id="sendBtn">Ask</button>
+    </form>
+  </div>
+
+  <div class="ledger">
+    <p class="ledger-title">Grounding Ledger</p>
+    <p class="ledger-sub">Live record of what the agent looked up or calculated to answer your last question — not a script, a real decision at each step.</p>
+    <div id="ledgerBody">
+      <p class="ledger-empty">Nothing yet. Ask a question to see the agent's reasoning here.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const thread = document.getElementById('thread');
+const emptyState = document.getElementById('emptyState');
+const ledgerBody = document.getElementById('ledgerBody');
+const form = document.getElementById('composer');
+const input = document.getElementById('question');
+const sendBtn = document.getElementById('sendBtn');
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function renderMarkdownish(text) {
+  let safe = escapeHtml(text);
+  safe = safe.replace(/^### (.*)$/gm, '<h3>$1</h3>');
+  safe = safe.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  safe = safe.replace(/\n\n/g, '</p><p>');
+  safe = safe.replace(/\n/g, '<br>');
+  return `<p>${safe}</p>`;
+}
+
+function addMessage(role, html) {
+  if (emptyState) { emptyState.remove(); }
+  const wrap = document.createElement('div');
+  wrap.className = `msg ${role}`;
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.innerHTML = html;
+  wrap.appendChild(bubble);
+  thread.appendChild(wrap);
+  thread.scrollTop = thread.scrollHeight;
+  return bubble;
+}
+
+function toolLabel(toolName) {
+  const labels = {
+    search_policy_documents: { text: 'Retrieved policy clause', cls: 'grounded' },
+    calculate: { text: 'Calculated', cls: '' },
+    lookup_term: { text: 'Looked up term', cls: '' },
+  };
+  return labels[toolName] || { text: toolName, cls: '' };
+}
+
+function renderLedger(toolCalls) {
+  if (!toolCalls || toolCalls.length === 0) {
+    ledgerBody.innerHTML = '<p class="ledger-empty">The agent answered directly, without needing a tool call.</p>';
+    return;
+  }
+  ledgerBody.innerHTML = '';
+  toolCalls.forEach((tc, i) => {
+    const label = toolLabel(tc.tool);
+    const div = document.createElement('div');
+    div.className = 'receipt';
+    const inputStr = typeof tc.tool_input === 'string' ? tc.tool_input : JSON.stringify(tc.tool_input);
+    div.innerHTML = `
+      <span class="tool-name ${label.cls}">${label.text}</span>
+      <div class="row"><b>call ${i + 1}/${toolCalls.length}</b> · ${escapeHtml(tc.tool)}</div>
+      <div class="row">args: ${escapeHtml(inputStr)}</div>
+      <div class="observation">${escapeHtml(tc.observation || '')}</div>
+    `;
+    ledgerBody.appendChild(div);
+  });
+}
+
+// Running record of the conversation so far, sent with each request so
+// the agent has context from earlier turns (e.g. "what about the other one?").
+const conversationHistory = [];
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const question = input.value.trim();
+  if (!question) return;
+
+  addMessage('user', escapeHtml(question));
+  input.value = '';
+  sendBtn.disabled = true;
+
+  const thinkingBubble = addMessage('assistant', '<span class="loading-dot"></span>Working through the policy…');
+  ledgerBody.innerHTML = '<p class="ledger-empty"><span class="loading-dot"></span>Agent is deciding which tools to use…</p>';
+
+  try {
+    const res = await fetch('/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, history: conversationHistory }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      thinkingBubble.innerHTML = `<strong>Something went wrong.</strong><br>${escapeHtml(data.detail || 'Unknown error.')}`;
+      ledgerBody.innerHTML = '<p class="ledger-empty">No tool calls to show — the request failed.</p>';
+    } else {
+      const answer = data.answer || '(no answer returned)';
+      thinkingBubble.innerHTML = renderMarkdownish(answer);
+      renderLedger(data.tool_calls);
+      // Only commit to history once we have a real answer.
+      conversationHistory.push({ role: 'user', content: question });
+      conversationHistory.push({ role: 'assistant', content: answer });
+    }
+  } catch (err) {
+    thinkingBubble.innerHTML = `<strong>Couldn't reach the server.</strong><br>${escapeHtml(String(err))}`;
+  } finally {
+    sendBtn.disabled = false;
+    input.focus();
+  }
+});
+</script>
+
+</body>
+</html>

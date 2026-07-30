@@ -96,10 +96,36 @@
     border: 1px solid var(--line);
     border-bottom-left-radius: 3px;
   }
-  .msg.assistant .bubble h3,
-  .msg.assistant .bubble strong { font-family: 'Source Serif 4', serif; }
+  .msg.assistant .bubble h3 { font-family: 'Source Serif 4', serif; }
+  .msg.assistant .bubble strong { font-weight: 600; }
   .msg.assistant .bubble p:first-child { margin-top: 0; }
   .msg.assistant .bubble p:last-child { margin-bottom: 0; }
+  .msg.assistant .bubble h3 {
+    font-size: 16px;
+    margin: 16px 0 8px;
+  }
+  .msg.assistant .bubble h3:first-child { margin-top: 0; }
+  .msg.assistant .bubble ul {
+    margin: 6px 0 12px;
+    padding-left: 20px;
+  }
+  .msg.assistant .bubble li {
+    margin: 4px 0;
+    line-height: 1.5;
+  }
+  .msg.assistant .bubble code {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    background: var(--gold-soft);
+    color: #6B531F;
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+  .msg.assistant .bubble hr {
+    border: none;
+    border-top: 1px solid var(--line);
+    margin: 14px 0;
+  }
 
   .empty-state {
     margin: auto;
@@ -265,12 +291,50 @@ function escapeHtml(str) {
 }
 
 function renderMarkdownish(text) {
-  let safe = escapeHtml(text);
-  safe = safe.replace(/^### (.*)$/gm, '<h3>$1</h3>');
-  safe = safe.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  safe = safe.replace(/\n\n/g, '</p><p>');
-  safe = safe.replace(/\n/g, '<br>');
-  return `<p>${safe}</p>`;
+  const lines = text.split('\n');
+  let html = '';
+  let inList = false;
+
+  function closeList() {
+    if (inList) { html += '</ul>'; inList = false; }
+  }
+
+  function inline(str) {
+    let s = escapeHtml(str);
+    s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    return s;
+  }
+
+  for (let raw of lines) {
+    const line = raw.trim();
+
+    if (line === '' ) {
+      closeList();
+      continue;
+    }
+    if (/^-{3,}$/.test(line)) {
+      closeList();
+      html += '<hr>';
+      continue;
+    }
+    const headerMatch = line.match(/^#{1,6}\s+(.*)$/);
+    if (headerMatch) {
+      closeList();
+      html += `<h3>${inline(headerMatch[1])}</h3>`;
+      continue;
+    }
+    const bulletMatch = line.match(/^[*-]\s+(.*)$/);
+    if (bulletMatch) {
+      if (!inList) { html += '<ul>'; inList = true; }
+      html += `<li>${inline(bulletMatch[1])}</li>`;
+      continue;
+    }
+    closeList();
+    html += `<p>${inline(line)}</p>`;
+  }
+  closeList();
+  return html;
 }
 
 function addMessage(role, html) {
@@ -316,6 +380,8 @@ function renderLedger(toolCalls) {
   });
 }
 
+const conversationHistory = [];
+
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const question = input.value.trim();
@@ -332,7 +398,7 @@ form.addEventListener('submit', async (e) => {
     const res = await fetch('/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ question, history: conversationHistory }),
     });
     const data = await res.json();
 
@@ -340,8 +406,13 @@ form.addEventListener('submit', async (e) => {
       thinkingBubble.innerHTML = `<strong>Something went wrong.</strong><br>${escapeHtml(data.detail || 'Unknown error.')}`;
       ledgerBody.innerHTML = '<p class="ledger-empty">No tool calls to show — the request failed.</p>';
     } else {
-      thinkingBubble.innerHTML = renderMarkdownish(data.answer || '(no answer returned)');
+      const answer = data.answer || '(no answer returned)';
+      thinkingBubble.innerHTML = renderMarkdownish(answer);
       renderLedger(data.tool_calls);
+      // Remember this turn so follow-up questions ("put that in bullet
+      // points", "what about the second one?") have something to refer to.
+      conversationHistory.push({ role: 'user', content: question });
+      conversationHistory.push({ role: 'assistant', content: answer });
     }
   } catch (err) {
     thinkingBubble.innerHTML = `<strong>Couldn't reach the server.</strong><br>${escapeHtml(String(err))}`;

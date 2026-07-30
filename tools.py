@@ -17,7 +17,17 @@ from documents import POLICY_DOCUMENTS
 # Built once at import time; reused across requests rather than rebuilt per call.
 _embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 _docs = [
-    Document(page_content=d["text"], metadata={"id": d["id"], "title": d["title"]})
+    Document(
+        # The title is embedded together with the body so that queries
+        # naming a specific coverage (e.g. "Standard Liability Coverage")
+        # actually match on those words. Previously only the body text was
+        # embedded, and several clause bodies never mention their own
+        # coverage name — e.g. the Standard Liability exclusions clause
+        # never says "liability" — so it lost to other clauses whose body
+        # happened to share more vocabulary with the query.
+        page_content=f"{d['title']}: {d['text']}",
+        metadata={"id": d["id"], "title": d["title"], "body": d["text"]},
+    )
     for d in POLICY_DOCUMENTS
 ]
 _vectorstore = FAISS.from_documents(_docs, _embeddings)
@@ -29,11 +39,11 @@ def search_policy_documents(query: str) -> str:
     Use this whenever the user asks about coverage, exclusions, claims process,
     premiums, or dispute resolution. Returns the most relevant clause(s) with
     their source section, so answers can be grounded and cited."""
-    results = _vectorstore.similarity_search(query, k=2)
+    results = _vectorstore.similarity_search(query, k=3)
     if not results:
         return "No relevant policy clauses found."
     return "\n\n".join(
-        f"[{r.metadata['title']} ({r.metadata['id']})]\n{r.page_content}" for r in results
+        f"[{r.metadata['title']} ({r.metadata['id']})]\n{r.metadata['body']}" for r in results
     )
 
 

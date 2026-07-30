@@ -14,8 +14,14 @@ app = FastAPI(title="Insurance Coverage-Check Agent")
 STATIC_DIR = Path(__file__).parent / "static"
 
 
+class HistoryTurn(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
+
 class AskRequest(BaseModel):
     question: str
+    history: list[HistoryTurn] = []
 
 
 class ToolCall(BaseModel):
@@ -46,7 +52,7 @@ def ask_endpoint(req: AskRequest):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="question must not be empty")
     try:
-        result = ask(req.question)
+        result = ask(req.question, history=[t.model_dump() for t in req.history])
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Agent error: {e}")
     return result
