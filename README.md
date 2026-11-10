@@ -2,7 +2,7 @@
 
 > **RAG + tool-calling agent over insurance policy documents, served via FastAPI**
 
-An end-to-end AI agent that answers natural-language questions about insurance coverage by combining retrieval-augmented generation (RAG) with a real tool-calling loop — the agent can invoke a calculator and a glossary lookup mid-conversation, not just retrieve text.
+An end-to-end AI agent that answers natural-language questions about insurance coverage by combining retrieval-augmented generation (RAG) with a real tool-calling loop like the agent can invoke a calculator and a glossary lookup mid-conversation, not just retrieve text.
 
 ---
 
