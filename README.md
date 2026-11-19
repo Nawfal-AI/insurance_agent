@@ -1,187 +1,108 @@
-# insurance_agent
+# Insurance Agent — Production
 
-**A ReAct-style AI agent that answers natural-language questions about insurance policy documents, combining retrieval-augmented generation, tool-calling, and a FastAPI backend into one runnable system.**
+A production-grade LLM-powered Q&A assistant for Swiss public health insurance
+(KVG / LAMal) documents. Built to demonstrate the full journey from a research
+prototype to an industrialised system deployed on AWS.
 
-The insurance domain is a stand-in. The same architecture applies to any corpus of structured documents (legal contracts, medical guidelines, HR policies, technical manuals) where answers must be grounded in source material rather than generated from memory.
+## What it does
 
----
-
-## What makes this an agent, not just a chatbot
-
-Most LLM integrations follow a fixed pipeline: retrieve context, then generate an answer. This project uses a **ReAct loop** (Reason, Act, Observe, Repeat):
-
-1. The LLM reads the question and decides what to do next.
-2. It issues a tool call: search documents, calculate a figure, or look up a term.
-3. It observes the result and decides whether it has enough information.
-4. If not, it calls another tool, possibly with a rephrased query.
-5. Only when it has sufficient grounded evidence does it produce a final answer.
-
-This means the agent can handle multi-part questions, retry failed retrievals, chain a document lookup into a calculation, and explain its reasoning without any of that logic being hardcoded.
-
----
-
-## Features
-
-- **RAG pipeline** -- policy clauses embedded with `sentence-transformers`, stored in a FAISS vector store, retrieved at query time with semantic similarity search
-- **Real tool-calling loop** -- the LangGraph agent autonomously decides when to call each tool based on what it finds, not a fixed script
-- **Multi-provider LLM support** -- swap between Anthropic, OpenAI, Google Gemini, Groq, or a local Ollama model by changing one environment variable; no code changes needed
-- **Transparent reasoning** -- the `/ask` endpoint returns the final answer plus a full trace of every tool call made, so the agent's reasoning loop is visible
-- **Conversation history** -- prior turns are passed as context, so follow-up questions work correctly
-- **Docker-first** -- one `docker compose up --build` runs everything
-
----
-
-## How it works
+A caseworker types a question in plain language — "What is the deductible if I
+file three claims this year?" — and the system searches the policy documents,
+retrieves the relevant clauses, and returns a grounded, cited answer in under
+two seconds.
 
 ```
-User question (via UI or API)
-        |
-        v
-  FastAPI /ask endpoint
-        |
-        v
-  LangGraph ReAct Agent
-     |        |        |
-     v        v        v
-  search_   calcu-   lookup_
-  policy_   late()   term()
-  docs()
-  (FAISS    (safe    (glossary
-  vector    eval)    dict)
-  store)
-     |
-     v
-  HuggingFace sentence-transformer embeddings
-  -> top-k clause retrieval
-        |
-        v
-  LLM synthesises grounded answer
-  (cites policy section + tool trace)
-        |
-        v
-  JSON response: { answer, tool_calls[] }
+Caseworker → Streamlit UI → FastAPI → LangGraph ReAct agent
+                                           ├── FAISS vector search (policy docs)
+                                           ├── Calculator (claim amounts)
+                                           └── Glossary (insurance terms)
+                                                   │
+                                               Claude / GPT-4 / Llama
 ```
 
-The agent loop is real. The verified example in `results/example_run.json` shows the agent calling `search_policy_documents` twice (rewording the query on the second attempt), `calculate` once, and `lookup_term` once -- a sequence it chose itself, not one that was scripted.
+## Who it was built for
 
----
-
-## Available tools
-
-| Tool | What it does | When the agent calls it |
-|---|---|---|
-| `search_policy_documents` | Semantic search over embedded policy clauses; returns matching sections with their titles | Any question about coverage, exclusions, claims, or policy terms |
-| `calculate` | Evaluates an arithmetic expression with a strict allowlist -- no arbitrary code execution | Whenever a numeric result is needed (claim reimbursement, premium totals) |
-| `lookup_term` | Returns plain-language definitions for insurance and legal jargon | When the question contains terms like deductible, exclusion, arbitration, or premium |
-
-The agent is prompted to never invent numbers. Every figure it passes to `calculate` must have come from a prior `search_policy_documents` call in the same conversation.
-
----
-
-## Quick start
-
-Prerequisites: Docker and Docker Compose. No local Python installation needed.
-
-```bash
-git clone https://github.com/Nawfal-AI/insurance_agent
-cd insurance_agent
-cp .env.example .env        # add your API key (see provider table below)
-docker compose up --build
-# open http://localhost:8000
-```
-
-Without Docker:
-
-```bash
-pip install -r requirements.txt
-cp .env.example .env
-uvicorn serve:app --reload --port 8000
-```
-
----
-
-## Choosing an LLM provider
-
-Set `LLM_PROVIDER` in `.env`. The agent code is identical regardless of provider.
-
-| Provider | Cost | Notes |
-|---|---|---|
-| Groq (recommended) | Free tier, 14,400 req/day | Highest free-tier limit; best starting point. No credit card required. |
-| Google Gemini | Free tier, 20 req/day | Low request limit. Use `gemini-flash-latest` as the model name -- Google retires versioned names frequently. |
-| Ollama | Free, fully local | No API key or internet needed at inference time. Requires a capable machine. |
-| Anthropic | Small trial credit, then paid | Not a persistent free tier. |
-| OpenAI | Paid only | No free tier. |
-
----
-
-## Adapting to your own documents
-
-The domain is intentionally generic. To use this against a different corpus:
-
-1. Replace `documents.py` -- populate `POLICY_DOCUMENTS` with your own content. Each entry needs an `id`, `title`, and `text`. The vector store is built from these at startup.
-2. Update the system prompt in `agent.py` -- change the persona and grounding instructions to match your domain.
-3. Extend the glossary in `tools.py` -- add domain-specific terms to `_GLOSSARY`.
-4. Add new tools as needed -- any Python function decorated with `@tool` and added to `ALL_TOOLS` becomes available to the agent automatically.
-
-For larger document sets, replace the in-memory FAISS store with a persistent vector database (Chroma, Pinecone, Weaviate). The retrieval interface stays the same.
-
----
+A fictitious Swiss cantonal insurance office (see [PARTNER_BRIEF.md](PARTNER_BRIEF.md))
+that handles thousands of KVG/LAMal policy queries per year. The brief drove
+the production requirements: 2-second latency budget, GDPR-compliant logging,
+multilingual support (DE / FR / EN), and deployability in the EU (AWS Frankfurt).
 
 ## Project structure
 
 ```
-insurance_agent/
-├── agent.py              # LangGraph ReAct agent, LLM provider switching, response parsing
-├── tools.py              # Tool definitions: RAG retriever, calculator, glossary
-├── documents.py          # Synthetic policy clauses (replace with real documents here)
-├── serve.py              # FastAPI app -- /ask endpoint and UI serving
-├── test_tools.py         # Unit tests for the three tools in isolation
-├── static/
-│   └── index.html        # Single-page chat UI
-├── results/
-│   └── example_run.json  # Verified real agent output
-├── .env.example          # API key template
-├── Dockerfile
-└── requirements.txt
+insurance_agent_production/
+├── agent.py                    ← ReAct agent loop (unchanged from prototype)
+├── tools.py                    ← LangChain tools: search, calculate, glossary
+├── documents.py                ← Policy document corpus (replace with real docs)
+├── serve.py                    ← FastAPI: /health /metrics /ask + logging
+├── docker-compose.yml          ← Local dev: API + Streamlit frontend
+├── Dockerfile                  ← Production-hardened image
+├── requirements.txt
+├── app/
+│   ├── api/middleware.py       ← Structured JSON logging → CloudWatch
+│   └── frontend/
+│       └── streamlit_app.py    ← Plain-language chat UI (non-technical users)
+├── configs/
+│   └── rag_v1.yaml             ← Versioned RAG config (retriever + LLM + latency budget)
+├── data/corpus/                ← Policy documents (see README inside)
+├── infra/aws/
+│   ├── ecs_task_definition.json ← ECS Fargate task definition
+│   └── cloudwatch_dashboard.json ← CloudWatch dashboard (latency + errors)
+├── mlops/
+│   ├── mlflow/track_experiment.py ← Experiment tracking
+│   └── github-actions/ci-cd.yml   ← lint → test → ECR → ECS pipeline
+├── tests/test_api.py           ← API integration tests
+├── PARTNER_BRIEF.md            ← Problem statement + production requirements
+├── ARCHITECTURE.md             ← System diagram + design decisions
+└── DEPLOYMENT.md               ← Step-by-step: local → Docker → AWS
 ```
 
----
-
-## Running tests
+## Quickstart
 
 ```bash
-# With Docker:
-docker compose run --rm app pytest test_tools.py -v
-
-# Without Docker:
-pytest test_tools.py -v
+cp .env.example .env     # fill in your LLM API key
+pip install -r requirements.txt
+uvicorn serve:app --reload --port 8080
+# API: http://localhost:8080   |   Health: http://localhost:8080/health
 ```
 
----
+With Docker (API + Streamlit frontend):
+```bash
+docker-compose up --build
+# Frontend: http://localhost:8501
+```
 
-## Stack
+Full deployment guide: [DEPLOYMENT.md](DEPLOYMENT.md)
 
-| Layer | Technology |
+## Production features added over the prototype
+
+| Feature | File |
 |---|---|
-| Agent framework | LangGraph `create_react_agent` |
-| LLM abstraction | LangChain |
-| Embeddings | sentence-transformers/all-MiniLM-L6-v2 (HuggingFace) |
-| Vector store | FAISS (swappable for Chroma, Pinecone, etc.) |
-| API server | FastAPI + Uvicorn |
-| Packaging | Docker + Docker Compose |
+| Structured JSON logging → CloudWatch | `app/api/middleware.py` |
+| `/metrics` endpoint (latency, error rate) | `serve.py` |
+| Versioned RAG config (A/B testable) | `configs/rag_v1.yaml` |
+| MLflow experiment tracking | `mlops/mlflow/track_experiment.py` |
+| Streamlit frontend (non-technical users) | `app/frontend/streamlit_app.py` |
+| CI/CD: lint → test → ECR → ECS | `mlops/github-actions/ci-cd.yml` |
+| ECS Fargate task definition | `infra/aws/ecs_task_definition.json` |
+| CloudWatch dashboard | `infra/aws/cloudwatch_dashboard.json` |
+| Docker Compose for local parity | `docker-compose.yml` |
+| Integration tests | `tests/test_api.py` |
 
----
+## Key design decisions
 
-## Known limitations
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system diagram and a table
+of design decisions with rationale.
 
-- **Synthetic documents** -- `documents.py` contains invented policy clauses for demonstration purposes. The agent loop and tool-calling behavior are real and verified; the domain data is not.
-- **No persistent vector store** -- the FAISS index is built in memory at startup from `documents.py`. For large or frequently updated document sets, a persistent store would be needed.
-- **System prompt constraints have a ceiling** -- grounding failures required three rounds of prompt iteration to resolve. A production deployment would benefit from a post-generation verification pass rather than relying entirely on the system prompt to self-police edge cases.
+## Extending to real documents
 
-`NOTES.md` contains a full record of what broke during development and how it was debugged, written as an honest engineering log.
+Replace `documents.py` with a PDF loader pointed at your document folder.
+See [data/corpus/README.md](data/corpus/README.md) for instructions and links
+to public Swiss insurance document sources.
 
----
+## Running tests & linting
 
-## License
-
-MIT
+```bash
+pytest tests/ -v
+ruff check .
+```

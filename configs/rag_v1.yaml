@@ -1,0 +1,29 @@
+# RAG pipeline configuration — version 1
+# This file is tracked in git so every change is auditable.
+# Bump the version key and create rag_v2.yaml for A/B testing.
+
+version: "1.0.0"
+description: "Baseline RAG config for Swiss public-sector insurance Q&A"
+
+retriever:
+  model: "sentence-transformers/all-MiniLM-L6-v2"
+  top_k: 3
+  vector_store: "faiss"           # swap to "opensearch" for AWS production
+
+llm:
+  provider: "anthropic"           # override with LLM_PROVIDER env var
+  model: "claude-sonnet-4-5"
+  temperature: 0
+  max_tokens: 1024
+
+prompting:
+  system_prompt_version: "v1"
+  grounding: true                 # require every factual claim to cite a retrieved clause
+
+production:
+  latency_budget_ms: 2000         # target p95 response time
+  max_retries: 2
+  fallback_message: "I was unable to retrieve relevant policy information. Please contact your advisor."
+
+domain: "Swiss public health insurance (KVG / LAMal)"
+language_support: ["en", "fr", "de"]

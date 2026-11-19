@@ -1,0 +1,38 @@
+# Local development — mirrors the production ECS setup as closely as possible.
+# Usage:
+#   docker-compose up --build        # start API + frontend
+#   docker-compose down              # stop
+
+version: "3.9"
+
+services:
+  api:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: >
+      sh -c "pip install -q streamlit requests python-dotenv &&
+             streamlit run app/frontend/streamlit_app.py --server.port 8501 --server.address 0.0.0.0"
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      - BACKEND_URL=http://api:8080
+    depends_on:
+      api:
+        condition: service_healthy
