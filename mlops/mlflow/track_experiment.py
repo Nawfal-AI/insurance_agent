@@ -12,7 +12,7 @@ import json
 import mlflow
 from pathlib import Path
 
-MLFLOW_TRACKING_URI = "mlruns"   # local folder; swap to an MLflow server URI for team use
+MLFLOW_TRACKING_URI = "sqlite:///mlruns.db"   # local folder; swap to an MLflow server URI for team use
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 mlflow.set_experiment("insurance-agent-rag")
 
