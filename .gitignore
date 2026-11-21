@@ -6,3 +6,5 @@ venv/
 .DS_Store
 mlruns/
 mlruns.db
+mlruns/
+mlruns.db
