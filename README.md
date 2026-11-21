@@ -142,3 +142,9 @@ ruff check .
 ## Tech stack
 
 `Python` · `LangGraph` · `LangChain` · `FastAPI` · `FAISS` · `Sentence Transformers` · `Streamlit` · `MLflow` · `Docker` · `AWS ECS Fargate` · `AWS CloudWatch` · `GitHub Actions`
+
+---
+
+## Engineering notes :— what broke and how I fixed it
+
+[NOTES.md](NOTES.md) documents the real, unplanned breakage this project hit during development: LangChain API restructures, three successive model deprecations, a retrieval bug traced to what gets embedded (not just what gets retrieved), and three rounds of prompt iteration to close grounding failures without trading one failure mode for another. Worth reading if you want to understand how the project was actually built, not just what it does.
